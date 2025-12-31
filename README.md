@@ -16,7 +16,7 @@ MCP server for Godot Engine 4.5+, enabling AI assistants to interact with your G
 
 ### 1. Install the Godot Addon
 
-Copy `godot/addons/godot_mcp` to your project's `addons` directory and enable it in Project Settings > Plugins.
+Download the addon from [GitHub Releases](https://github.com/satelliteoflove/godot-mcp/releases) and extract to your project's `addons` directory. Enable it in Project Settings > Plugins.
 
 ### 2. Configure Your AI Assistant
 

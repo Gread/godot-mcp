@@ -20,9 +20,10 @@ npx @satelliteoflove/godot-mcp
 
 ## Setup
 
-1. Copy the Godot addon from `godot/addons/godot_mcp` into your project
-2. Enable it in Project Settings > Plugins
-3. Configure your MCP client (see below)
+1. Download the addon from [GitHub Releases](https://github.com/satelliteoflove/godot-mcp/releases)
+2. Extract to your project's `addons` directory
+3. Enable it in Project Settings > Plugins
+4. Configure your MCP client (see below)
 
 ### Claude Desktop
 
