@@ -20,6 +20,38 @@ func _exit_tree() -> void:
 		EngineDebugger.unregister_message_capture("godot_mcp")
 
 
+func _process(_delta: float) -> void:
+	if not _sequence_running or _sequence_events.is_empty():
+		return
+
+	var elapsed := Time.get_ticks_msec() - _sequence_start_time
+
+	while _sequence_events.size() > 0 and _sequence_events[0].time <= elapsed:
+		var seq_event: Dictionary = _sequence_events.pop_front()
+		var input_event := InputEventAction.new()
+		input_event.action = seq_event.action
+		input_event.pressed = seq_event.is_press
+		input_event.strength = 1.0 if seq_event.is_press else 0.0
+		Input.parse_input_event(input_event)
+		if not seq_event.is_press:
+			_actions_completed += 1
+
+	if _sequence_events.is_empty():
+		_sequence_running = false
+		set_process(false)
+		EngineDebugger.send_message("godot_mcp:input_sequence_result", [{
+			"completed": true,
+			"actions_executed": _actions_completed,
+		}])
+
+
+var _sequence_events: Array = []
+var _sequence_start_time: int = 0
+var _sequence_running: bool = false
+var _actions_completed: int = 0
+var _actions_total: int = 0
+
+
 func _on_debugger_message(message: String, data: Array) -> bool:
 	match message:
 		"take_screenshot":
@@ -33,6 +65,15 @@ func _on_debugger_message(message: String, data: Array) -> bool:
 			return true
 		"find_nodes":
 			_handle_find_nodes(data)
+			return true
+		"get_input_map":
+			_handle_get_input_map()
+			return true
+		"execute_input_sequence":
+			_handle_execute_input_sequence(data)
+			return true
+		"type_text":
+			_handle_type_text(data)
 			return true
 	return false
 
@@ -193,3 +234,153 @@ class _MCPGameLogger extends Logger:
 		_mutex.lock()
 		_output.clear()
 		_mutex.unlock()
+
+
+func _handle_get_input_map() -> void:
+	var actions: Array = []
+	for action_name in InputMap.get_actions():
+		if action_name.begins_with("ui_"):
+			continue
+		var events := InputMap.action_get_events(action_name)
+		var event_strings: Array = []
+		for event in events:
+			event_strings.append(_event_to_string(event))
+		actions.append({
+			"name": action_name,
+			"events": event_strings,
+		})
+	EngineDebugger.send_message("godot_mcp:input_map_result", [actions, ""])
+
+
+func _event_to_string(event: InputEvent) -> String:
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		var key_name := OS.get_keycode_string(key_event.keycode)
+		if key_event.ctrl_pressed:
+			key_name = "Ctrl+" + key_name
+		if key_event.alt_pressed:
+			key_name = "Alt+" + key_name
+		if key_event.shift_pressed:
+			key_name = "Shift+" + key_name
+		return key_name
+	elif event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		match mouse_event.button_index:
+			MOUSE_BUTTON_LEFT:
+				return "Mouse Left"
+			MOUSE_BUTTON_RIGHT:
+				return "Mouse Right"
+			MOUSE_BUTTON_MIDDLE:
+				return "Mouse Middle"
+			_:
+				return "Mouse Button %d" % mouse_event.button_index
+	elif event is InputEventJoypadButton:
+		var joy_event := event as InputEventJoypadButton
+		return "Joypad Button %d" % joy_event.button_index
+	elif event is InputEventJoypadMotion:
+		var joy_motion := event as InputEventJoypadMotion
+		return "Joypad Axis %d" % joy_motion.axis
+	return event.as_text()
+
+
+func _handle_execute_input_sequence(data: Array) -> void:
+	var inputs: Array = data[0] if data.size() > 0 else []
+
+	if inputs.is_empty():
+		EngineDebugger.send_message("godot_mcp:input_sequence_result", [{
+			"error": "No inputs provided",
+		}])
+		return
+
+	_sequence_events.clear()
+	_actions_completed = 0
+	_actions_total = inputs.size()
+
+	for input in inputs:
+		var action_name: String = input.get("action_name", "")
+		var start_ms: int = int(input.get("start_ms", 0))
+		var duration_ms: int = int(input.get("duration_ms", 0))
+
+		if action_name.is_empty():
+			continue
+
+		if not InputMap.has_action(action_name):
+			EngineDebugger.send_message("godot_mcp:input_sequence_result", [{
+				"error": "Unknown action: %s" % action_name,
+			}])
+			return
+
+		_sequence_events.append({
+			"time": start_ms,
+			"action": action_name,
+			"is_press": true,
+		})
+		_sequence_events.append({
+			"time": start_ms + duration_ms,
+			"action": action_name,
+			"is_press": false,
+		})
+
+	_sequence_events.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a.time < b.time
+	)
+
+	_sequence_start_time = Time.get_ticks_msec()
+	_sequence_running = true
+	set_process(true)
+
+
+func _handle_type_text(data: Array) -> void:
+	var text: String = data[0] if data.size() > 0 else ""
+	var delay_ms: int = int(data[1]) if data.size() > 1 else 50
+	var submit: bool = data[2] if data.size() > 2 else false
+
+	if text.is_empty():
+		EngineDebugger.send_message("godot_mcp:type_text_result", [{
+			"error": "No text provided",
+		}])
+		return
+
+	_type_text_async(text, delay_ms, submit)
+
+
+func _type_text_async(text: String, delay_ms: int, submit: bool) -> void:
+	for i in text.length():
+		var char_code := text.unicode_at(i)
+
+		var press := InputEventKey.new()
+		press.keycode = char_code
+		press.unicode = char_code
+		press.pressed = true
+		Input.parse_input_event(press)
+
+		var release := InputEventKey.new()
+		release.keycode = char_code
+		release.unicode = char_code
+		release.pressed = false
+		Input.parse_input_event(release)
+
+		if delay_ms > 0 and i < text.length() - 1:
+			await get_tree().create_timer(delay_ms / 1000.0).timeout
+
+	if submit:
+		if delay_ms > 0:
+			await get_tree().create_timer(delay_ms / 1000.0).timeout
+
+		var enter_press := InputEventKey.new()
+		enter_press.keycode = KEY_ENTER
+		enter_press.physical_keycode = KEY_ENTER
+		enter_press.pressed = true
+		Input.parse_input_event(enter_press)
+
+		var enter_release := InputEventKey.new()
+		enter_release.keycode = KEY_ENTER
+		enter_release.physical_keycode = KEY_ENTER
+		enter_release.pressed = false
+		Input.parse_input_event(enter_release)
+
+	EngineDebugger.send_message("godot_mcp:type_text_result", [{
+		"completed": true,
+		"chars_typed": text.length(),
+		"submitted": submit,
+	}])
