@@ -420,13 +420,23 @@ func _button_index_to_mask(index: MouseButton) -> MouseButtonMask:
 			return MOUSE_BUTTON_MASK_LEFT
 
 
+## Convert viewport coordinates to the logical window coordinates that
+## Input.warp_mouse() and InputEvent.position expect.
+## MCP tools document coordinates as "viewport pixels", but warp_mouse and
+## parse_input_event operate in the window's logical coordinate space which
+## differs from viewport coords when DPI scaling or content stretch is active.
+func _viewport_to_window(viewport_pos: Vector2) -> Vector2:
+	var xform := get_viewport().get_screen_transform()
+	return xform * viewport_pos
+
+
 func _handle_mouse_click(data: Array) -> void:
 	var x: float = data[0] if data.size() > 0 else 0.0
 	var y: float = data[1] if data.size() > 1 else 0.0
 	var button_str: String = data[2] if data.size() > 2 else "left"
 
 	var button_index := _button_string_to_index(button_str)
-	var pos := Vector2(x, y)
+	var pos := _viewport_to_window(Vector2(x, y))
 
 	Input.warp_mouse(pos)
 
@@ -454,7 +464,7 @@ func _handle_mouse_click(data: Array) -> void:
 func _handle_mouse_move(data: Array) -> void:
 	var x: float = data[0] if data.size() > 0 else 0.0
 	var y: float = data[1] if data.size() > 1 else 0.0
-	var pos := Vector2(x, y)
+	var pos := _viewport_to_window(Vector2(x, y))
 
 	Input.warp_mouse(pos)
 
@@ -474,7 +484,7 @@ func _handle_mouse_scroll(data: Array) -> void:
 	var direction: String = data[2] if data.size() > 2 else "up"
 	var clicks: int = int(data[3]) if data.size() > 3 else 1
 
-	var pos := Vector2(x, y)
+	var pos := _viewport_to_window(Vector2(x, y))
 	var button_index: MouseButton = MOUSE_BUTTON_WHEEL_UP if direction == "up" else MOUSE_BUTTON_WHEEL_DOWN
 
 	Input.warp_mouse(pos)
@@ -515,8 +525,8 @@ func _handle_mouse_drag(data: Array) -> void:
 func _mouse_drag_async(from_x: float, from_y: float, to_x: float, to_y: float,
 		button_str: String, duration_ms: int, steps: int) -> void:
 	var button_index := _button_string_to_index(button_str)
-	var from_pos := Vector2(from_x, from_y)
-	var to_pos := Vector2(to_x, to_y)
+	var from_pos := _viewport_to_window(Vector2(from_x, from_y))
+	var to_pos := _viewport_to_window(Vector2(to_x, to_y))
 
 	Input.warp_mouse(from_pos)
 
