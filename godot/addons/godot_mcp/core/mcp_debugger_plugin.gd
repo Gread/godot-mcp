@@ -9,6 +9,10 @@ signal find_nodes_received(matches: Array, count: int, error: String)
 signal input_map_received(actions: Array, error: String)
 signal input_sequence_completed(result: Dictionary)
 signal type_text_completed(result: Dictionary)
+signal mouse_click_completed(result: Dictionary)
+signal mouse_move_completed(result: Dictionary)
+signal mouse_scroll_completed(result: Dictionary)
+signal mouse_drag_completed(result: Dictionary)
 
 var _active_session_id: int = -1
 var _pending_screenshot: bool = false
@@ -18,6 +22,10 @@ var _pending_find_nodes: bool = false
 var _pending_input_map: bool = false
 var _pending_input_sequence: bool = false
 var _pending_type_text: bool = false
+var _pending_mouse_click: bool = false
+var _pending_mouse_move: bool = false
+var _pending_mouse_scroll: bool = false
+var _pending_mouse_drag: bool = false
 
 
 func _has_capture(prefix: String) -> bool:
@@ -46,6 +54,18 @@ func _capture(message: String, data: Array, session_id: int) -> bool:
 			return true
 		"godot_mcp:type_text_result":
 			_handle_type_text_result(data)
+			return true
+		"godot_mcp:mouse_click_result":
+			_handle_mouse_click_result(data)
+			return true
+		"godot_mcp:mouse_move_result":
+			_handle_mouse_move_result(data)
+			return true
+		"godot_mcp:mouse_scroll_result":
+			_handle_mouse_scroll_result(data)
+			return true
+		"godot_mcp:mouse_drag_result":
+			_handle_mouse_drag_result(data)
 			return true
 	return false
 
@@ -77,6 +97,18 @@ func _session_stopped() -> void:
 	if _pending_type_text:
 		_pending_type_text = false
 		type_text_completed.emit({"error": "Game session ended"})
+	if _pending_mouse_click:
+		_pending_mouse_click = false
+		mouse_click_completed.emit({"error": "Game session ended"})
+	if _pending_mouse_move:
+		_pending_mouse_move = false
+		mouse_move_completed.emit({"error": "Game session ended"})
+	if _pending_mouse_scroll:
+		_pending_mouse_scroll = false
+		mouse_scroll_completed.emit({"error": "Game session ended"})
+	if _pending_mouse_drag:
+		_pending_mouse_drag = false
+		mouse_drag_completed.emit({"error": "Game session ended"})
 
 
 func has_active_session() -> bool:
@@ -229,3 +261,80 @@ func _handle_type_text_result(data: Array) -> void:
 	_pending_type_text = false
 	var result: Dictionary = data[0] if data.size() > 0 else {}
 	type_text_completed.emit(result)
+
+
+func request_mouse_click(x: float, y: float, button: String) -> void:
+	if _active_session_id < 0:
+		mouse_click_completed.emit({"error": "No active game session"})
+		return
+	_pending_mouse_click = true
+	var session := get_session(_active_session_id)
+	if session:
+		session.send_message("godot_mcp:mouse_click", [x, y, button])
+	else:
+		_pending_mouse_click = false
+		mouse_click_completed.emit({"error": "Could not get debugger session"})
+
+
+func _handle_mouse_click_result(data: Array) -> void:
+	_pending_mouse_click = false
+	var result: Dictionary = data[0] if data.size() > 0 else {}
+	mouse_click_completed.emit(result)
+
+
+func request_mouse_move(x: float, y: float) -> void:
+	if _active_session_id < 0:
+		mouse_move_completed.emit({"error": "No active game session"})
+		return
+	_pending_mouse_move = true
+	var session := get_session(_active_session_id)
+	if session:
+		session.send_message("godot_mcp:mouse_move", [x, y])
+	else:
+		_pending_mouse_move = false
+		mouse_move_completed.emit({"error": "Could not get debugger session"})
+
+
+func _handle_mouse_move_result(data: Array) -> void:
+	_pending_mouse_move = false
+	var result: Dictionary = data[0] if data.size() > 0 else {}
+	mouse_move_completed.emit(result)
+
+
+func request_mouse_scroll(x: float, y: float, direction: String, clicks: int) -> void:
+	if _active_session_id < 0:
+		mouse_scroll_completed.emit({"error": "No active game session"})
+		return
+	_pending_mouse_scroll = true
+	var session := get_session(_active_session_id)
+	if session:
+		session.send_message("godot_mcp:mouse_scroll", [x, y, direction, clicks])
+	else:
+		_pending_mouse_scroll = false
+		mouse_scroll_completed.emit({"error": "Could not get debugger session"})
+
+
+func _handle_mouse_scroll_result(data: Array) -> void:
+	_pending_mouse_scroll = false
+	var result: Dictionary = data[0] if data.size() > 0 else {}
+	mouse_scroll_completed.emit(result)
+
+
+func request_mouse_drag(from_x: float, from_y: float, to_x: float, to_y: float,
+		button: String, duration_ms: int, steps: int) -> void:
+	if _active_session_id < 0:
+		mouse_drag_completed.emit({"error": "No active game session"})
+		return
+	_pending_mouse_drag = true
+	var session := get_session(_active_session_id)
+	if session:
+		session.send_message("godot_mcp:mouse_drag", [from_x, from_y, to_x, to_y, button, duration_ms, steps])
+	else:
+		_pending_mouse_drag = false
+		mouse_drag_completed.emit({"error": "Could not get debugger session"})
+
+
+func _handle_mouse_drag_result(data: Array) -> void:
+	_pending_mouse_drag = false
+	var result: Dictionary = data[0] if data.size() > 0 else {}
+	mouse_drag_completed.emit(result)

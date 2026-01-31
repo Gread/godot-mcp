@@ -75,6 +75,18 @@ func _on_debugger_message(message: String, data: Array) -> bool:
 		"type_text":
 			_handle_type_text(data)
 			return true
+		"mouse_click":
+			_handle_mouse_click(data)
+			return true
+		"mouse_move":
+			_handle_mouse_move(data)
+			return true
+		"mouse_scroll":
+			_handle_mouse_scroll(data)
+			return true
+		"mouse_drag":
+			_handle_mouse_drag(data)
+			return true
 	return false
 
 
@@ -383,4 +395,161 @@ func _type_text_async(text: String, delay_ms: int, submit: bool) -> void:
 		"completed": true,
 		"chars_typed": text.length(),
 		"submitted": submit,
+	}])
+
+
+func _button_string_to_index(button: String) -> MouseButton:
+	match button:
+		"right":
+			return MOUSE_BUTTON_RIGHT
+		"middle":
+			return MOUSE_BUTTON_MIDDLE
+		_:
+			return MOUSE_BUTTON_LEFT
+
+
+func _button_index_to_mask(index: MouseButton) -> MouseButtonMask:
+	match index:
+		MOUSE_BUTTON_LEFT:
+			return MOUSE_BUTTON_MASK_LEFT
+		MOUSE_BUTTON_RIGHT:
+			return MOUSE_BUTTON_MASK_RIGHT
+		MOUSE_BUTTON_MIDDLE:
+			return MOUSE_BUTTON_MASK_MIDDLE
+		_:
+			return MOUSE_BUTTON_MASK_LEFT
+
+
+func _handle_mouse_click(data: Array) -> void:
+	var x: float = data[0] if data.size() > 0 else 0.0
+	var y: float = data[1] if data.size() > 1 else 0.0
+	var button_str: String = data[2] if data.size() > 2 else "left"
+
+	var button_index := _button_string_to_index(button_str)
+	var pos := Vector2(x, y)
+
+	Input.warp_mouse(pos)
+
+	var press := InputEventMouseButton.new()
+	press.button_index = button_index
+	press.pressed = true
+	press.position = pos
+	press.global_position = pos
+	Input.parse_input_event(press)
+
+	await get_tree().create_timer(0.05).timeout
+
+	var release := InputEventMouseButton.new()
+	release.button_index = button_index
+	release.pressed = false
+	release.position = pos
+	release.global_position = pos
+	Input.parse_input_event(release)
+
+	EngineDebugger.send_message("godot_mcp:mouse_click_result", [{
+		"completed": true,
+	}])
+
+
+func _handle_mouse_move(data: Array) -> void:
+	var x: float = data[0] if data.size() > 0 else 0.0
+	var y: float = data[1] if data.size() > 1 else 0.0
+	var pos := Vector2(x, y)
+
+	Input.warp_mouse(pos)
+
+	var motion := InputEventMouseMotion.new()
+	motion.position = pos
+	motion.global_position = pos
+	Input.parse_input_event(motion)
+
+	EngineDebugger.send_message("godot_mcp:mouse_move_result", [{
+		"completed": true,
+	}])
+
+
+func _handle_mouse_scroll(data: Array) -> void:
+	var x: float = data[0] if data.size() > 0 else 0.0
+	var y: float = data[1] if data.size() > 1 else 0.0
+	var direction: String = data[2] if data.size() > 2 else "up"
+	var clicks: int = int(data[3]) if data.size() > 3 else 1
+
+	var pos := Vector2(x, y)
+	var button_index: MouseButton = MOUSE_BUTTON_WHEEL_UP if direction == "up" else MOUSE_BUTTON_WHEEL_DOWN
+
+	Input.warp_mouse(pos)
+
+	for i in clicks:
+		var press := InputEventMouseButton.new()
+		press.button_index = button_index
+		press.pressed = true
+		press.position = pos
+		press.global_position = pos
+		press.factor = 1.0
+		Input.parse_input_event(press)
+
+		var release := InputEventMouseButton.new()
+		release.button_index = button_index
+		release.pressed = false
+		release.position = pos
+		release.global_position = pos
+		Input.parse_input_event(release)
+
+	EngineDebugger.send_message("godot_mcp:mouse_scroll_result", [{
+		"completed": true,
+	}])
+
+
+func _handle_mouse_drag(data: Array) -> void:
+	var from_x: float = data[0] if data.size() > 0 else 0.0
+	var from_y: float = data[1] if data.size() > 1 else 0.0
+	var to_x: float = data[2] if data.size() > 2 else 0.0
+	var to_y: float = data[3] if data.size() > 3 else 0.0
+	var button_str: String = data[4] if data.size() > 4 else "left"
+	var duration_ms: int = int(data[5]) if data.size() > 5 else 100
+	var steps: int = int(data[6]) if data.size() > 6 else 10
+
+	_mouse_drag_async(from_x, from_y, to_x, to_y, button_str, duration_ms, steps)
+
+
+func _mouse_drag_async(from_x: float, from_y: float, to_x: float, to_y: float,
+		button_str: String, duration_ms: int, steps: int) -> void:
+	var button_index := _button_string_to_index(button_str)
+	var from_pos := Vector2(from_x, from_y)
+	var to_pos := Vector2(to_x, to_y)
+
+	Input.warp_mouse(from_pos)
+
+	var press := InputEventMouseButton.new()
+	press.button_index = button_index
+	press.pressed = true
+	press.position = from_pos
+	press.global_position = from_pos
+	Input.parse_input_event(press)
+
+	var step_delay := duration_ms / 1000.0 / steps
+	for i in range(1, steps + 1):
+		var t := float(i) / float(steps)
+		var pos := from_pos.lerp(to_pos, t)
+		Input.warp_mouse(pos)
+
+		var motion := InputEventMouseMotion.new()
+		motion.position = pos
+		motion.global_position = pos
+		motion.relative = (to_pos - from_pos) / steps
+		motion.button_mask = _button_index_to_mask(button_index)
+		Input.parse_input_event(motion)
+
+		if step_delay > 0:
+			await get_tree().create_timer(step_delay).timeout
+
+	var release := InputEventMouseButton.new()
+	release.button_index = button_index
+	release.pressed = false
+	release.position = to_pos
+	release.global_position = to_pos
+	Input.parse_input_event(release)
+
+	EngineDebugger.send_message("godot_mcp:mouse_drag_result", [{
+		"completed": true,
 	}])

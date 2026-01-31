@@ -14,12 +14,28 @@ var _sequence_pending: bool = false
 var _type_text_result: Dictionary = {}
 var _type_text_pending: bool = false
 
+var _mouse_click_result: Dictionary = {}
+var _mouse_click_pending: bool = false
+
+var _mouse_move_result: Dictionary = {}
+var _mouse_move_pending: bool = false
+
+var _mouse_scroll_result: Dictionary = {}
+var _mouse_scroll_pending: bool = false
+
+var _mouse_drag_result: Dictionary = {}
+var _mouse_drag_pending: bool = false
+
 
 func get_commands() -> Dictionary:
 	return {
 		"get_input_map": get_input_map,
 		"execute_input_sequence": execute_input_sequence,
 		"type_text": type_text,
+		"mouse_click": mouse_click,
+		"mouse_move": mouse_move,
+		"mouse_scroll": mouse_scroll,
+		"mouse_drag": mouse_drag,
 	}
 
 
@@ -191,3 +207,161 @@ func type_text(params: Dictionary) -> Dictionary:
 func _on_type_text_completed(result: Dictionary) -> void:
 	_type_text_pending = false
 	_type_text_result = result
+
+
+func mouse_click(params: Dictionary) -> Dictionary:
+	var x: float = params.get("x", 0.0)
+	var y: float = params.get("y", 0.0)
+	var button: String = params.get("button", "left")
+
+	if not EditorInterface.is_playing_scene():
+		return _error("NOT_RUNNING", "No game is currently running")
+
+	var debugger_plugin = _plugin.get_debugger_plugin() if _plugin else null
+	if debugger_plugin == null or not debugger_plugin.has_active_session():
+		return _error("NO_SESSION", "No active debug session")
+
+	_mouse_click_pending = true
+	_mouse_click_result = {}
+
+	debugger_plugin.mouse_click_completed.connect(_on_mouse_click_completed, CONNECT_ONE_SHOT)
+	debugger_plugin.request_mouse_click(x, y, button)
+
+	var start_time := Time.get_ticks_msec()
+	while _mouse_click_pending:
+		await Engine.get_main_loop().process_frame
+		if (Time.get_ticks_msec() - start_time) / 1000.0 > INPUT_TIMEOUT:
+			_mouse_click_pending = false
+			if debugger_plugin.mouse_click_completed.is_connected(_on_mouse_click_completed):
+				debugger_plugin.mouse_click_completed.disconnect(_on_mouse_click_completed)
+			return _error("TIMEOUT", "Timed out waiting for mouse click")
+
+	if _mouse_click_result.has("error"):
+		return _error("MOUSE_ERROR", _mouse_click_result.get("error", "Unknown error"))
+
+	return _success(_mouse_click_result)
+
+
+func _on_mouse_click_completed(result: Dictionary) -> void:
+	_mouse_click_pending = false
+	_mouse_click_result = result
+
+
+func mouse_move(params: Dictionary) -> Dictionary:
+	var x: float = params.get("x", 0.0)
+	var y: float = params.get("y", 0.0)
+
+	if not EditorInterface.is_playing_scene():
+		return _error("NOT_RUNNING", "No game is currently running")
+
+	var debugger_plugin = _plugin.get_debugger_plugin() if _plugin else null
+	if debugger_plugin == null or not debugger_plugin.has_active_session():
+		return _error("NO_SESSION", "No active debug session")
+
+	_mouse_move_pending = true
+	_mouse_move_result = {}
+
+	debugger_plugin.mouse_move_completed.connect(_on_mouse_move_completed, CONNECT_ONE_SHOT)
+	debugger_plugin.request_mouse_move(x, y)
+
+	var start_time := Time.get_ticks_msec()
+	while _mouse_move_pending:
+		await Engine.get_main_loop().process_frame
+		if (Time.get_ticks_msec() - start_time) / 1000.0 > INPUT_TIMEOUT:
+			_mouse_move_pending = false
+			if debugger_plugin.mouse_move_completed.is_connected(_on_mouse_move_completed):
+				debugger_plugin.mouse_move_completed.disconnect(_on_mouse_move_completed)
+			return _error("TIMEOUT", "Timed out waiting for mouse move")
+
+	if _mouse_move_result.has("error"):
+		return _error("MOUSE_ERROR", _mouse_move_result.get("error", "Unknown error"))
+
+	return _success(_mouse_move_result)
+
+
+func _on_mouse_move_completed(result: Dictionary) -> void:
+	_mouse_move_pending = false
+	_mouse_move_result = result
+
+
+func mouse_scroll(params: Dictionary) -> Dictionary:
+	var x: float = params.get("x", 0.0)
+	var y: float = params.get("y", 0.0)
+	var direction: String = params.get("direction", "up")
+	var clicks: int = int(params.get("clicks", 1))
+
+	if not EditorInterface.is_playing_scene():
+		return _error("NOT_RUNNING", "No game is currently running")
+
+	var debugger_plugin = _plugin.get_debugger_plugin() if _plugin else null
+	if debugger_plugin == null or not debugger_plugin.has_active_session():
+		return _error("NO_SESSION", "No active debug session")
+
+	_mouse_scroll_pending = true
+	_mouse_scroll_result = {}
+
+	debugger_plugin.mouse_scroll_completed.connect(_on_mouse_scroll_completed, CONNECT_ONE_SHOT)
+	debugger_plugin.request_mouse_scroll(x, y, direction, clicks)
+
+	var start_time := Time.get_ticks_msec()
+	while _mouse_scroll_pending:
+		await Engine.get_main_loop().process_frame
+		if (Time.get_ticks_msec() - start_time) / 1000.0 > INPUT_TIMEOUT:
+			_mouse_scroll_pending = false
+			if debugger_plugin.mouse_scroll_completed.is_connected(_on_mouse_scroll_completed):
+				debugger_plugin.mouse_scroll_completed.disconnect(_on_mouse_scroll_completed)
+			return _error("TIMEOUT", "Timed out waiting for mouse scroll")
+
+	if _mouse_scroll_result.has("error"):
+		return _error("MOUSE_ERROR", _mouse_scroll_result.get("error", "Unknown error"))
+
+	return _success(_mouse_scroll_result)
+
+
+func _on_mouse_scroll_completed(result: Dictionary) -> void:
+	_mouse_scroll_pending = false
+	_mouse_scroll_result = result
+
+
+func mouse_drag(params: Dictionary) -> Dictionary:
+	var from_x: float = params.get("from_x", 0.0)
+	var from_y: float = params.get("from_y", 0.0)
+	var to_x: float = params.get("to_x", 0.0)
+	var to_y: float = params.get("to_y", 0.0)
+	var button: String = params.get("button", "left")
+	var duration_ms: int = int(params.get("duration_ms", 100))
+	var steps: int = int(params.get("steps", 10))
+
+	if not EditorInterface.is_playing_scene():
+		return _error("NOT_RUNNING", "No game is currently running")
+
+	var debugger_plugin = _plugin.get_debugger_plugin() if _plugin else null
+	if debugger_plugin == null or not debugger_plugin.has_active_session():
+		return _error("NO_SESSION", "No active debug session")
+
+	var timeout: float = max(INPUT_TIMEOUT, (duration_ms / 1000.0) + 5.0)
+
+	_mouse_drag_pending = true
+	_mouse_drag_result = {}
+
+	debugger_plugin.mouse_drag_completed.connect(_on_mouse_drag_completed, CONNECT_ONE_SHOT)
+	debugger_plugin.request_mouse_drag(from_x, from_y, to_x, to_y, button, duration_ms, steps)
+
+	var start_time := Time.get_ticks_msec()
+	while _mouse_drag_pending:
+		await Engine.get_main_loop().process_frame
+		if (Time.get_ticks_msec() - start_time) / 1000.0 > timeout:
+			_mouse_drag_pending = false
+			if debugger_plugin.mouse_drag_completed.is_connected(_on_mouse_drag_completed):
+				debugger_plugin.mouse_drag_completed.disconnect(_on_mouse_drag_completed)
+			return _error("TIMEOUT", "Timed out waiting for mouse drag")
+
+	if _mouse_drag_result.has("error"):
+		return _error("MOUSE_ERROR", _mouse_drag_result.get("error", "Unknown error"))
+
+	return _success(_mouse_drag_result)
+
+
+func _on_mouse_drag_completed(result: Dictionary) -> void:
+	_mouse_drag_pending = false
+	_mouse_drag_result = result
